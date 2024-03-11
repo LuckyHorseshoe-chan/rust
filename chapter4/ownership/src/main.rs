@@ -30,6 +30,7 @@ fn main() {
     makes_copy(x);                  // x would move into the function,
                                     // but i32 is Copy, so it's okay to still
                                     // use x afterward
+    println!("it's okay to still use x: {x}");
     
     let s1 = gives_ownership();         // gives_ownership moves its return
                                         // value into s1
@@ -44,6 +45,43 @@ fn main() {
     let (h2, len) = calculate_length(s1);
 
     println!("The length of '{}' is {}.", h2, len);
+
+    let mut s = String::from("hello");
+
+    // At any given time, you can have either one mutable reference or any number of immutable references
+    let r1 = &s; // no problem
+    let r2 = &s; // no problem
+    println!("{} and {}", r1, r2);
+    // variables r1 and r2 will not be used after this point
+
+    let r3 = &mut s; // no problem
+    println!("{}", r3);
+
+    // slices
+
+    let s = String::from("hello world");
+
+    let hello = &s[0..5];
+    let world = &s[6..11];
+
+    let my_string = String::from("hello world");
+
+    // `first_word` works on slices of `String`s, whether partial or whole
+    let word = first_word(&my_string[0..6]);
+    let word = first_word(&my_string[..]);
+    // `first_word` also works on references to `String`s, which are equivalent
+    // to whole slices of `String`s
+    let word = first_word(&my_string);
+
+    let my_string_literal = "hello world";
+
+    // `first_word` works on slices of string literals, whether partial or whole
+    let word = first_word(&my_string_literal[0..6]);
+    let word = first_word(&my_string_literal[..]);
+
+    // Because string literals *are* string slices already,
+    // this works too, without the slice syntax!
+    let word = first_word(my_string_literal);
                                 
 } // Here, s3 goes out of scope and is dropped. s2 was moved, so nothing
 // happens. s1 goes out of scope and is dropped.
@@ -74,3 +112,36 @@ fn takes_ownership(some_string: String) { // some_string comes into scope
 fn makes_copy(some_integer: i32) { // some_integer comes into scope
     println!("{}", some_integer);
 } // Here, some_integer goes out of scope. Nothing special happens.
+
+fn calculate_length(s: String) -> (String, usize) {
+  let length = s.len(); // len() returns the length of a String
+
+  (s, length)
+}
+
+// fn dangle() -> &String { // dangle returns a reference to a String
+
+//   let s = String::from("hello"); // s is a new String
+
+//   &s // we return a reference to the String, s
+// } // Here, s goes out of scope, and is dropped. Its memory goes away.
+// // Danger!
+// // The solution here is to return the String directly
+fn no_dangle() -> String {
+  let s = String::from("hello");
+
+  s
+}
+
+// str is a string slice type, &str allows to use both &String and &str
+fn first_word(s: &str) -> &str {
+  let bytes = s.as_bytes();
+
+  for (i, &item) in bytes.iter().enumerate() {
+      if item == b' ' {
+          return &s[0..i];
+      }
+  }
+
+  &s[..]
+}
