@@ -9,7 +9,8 @@ fn main() {
     // dbg!(args);
     // it returns the inner value Ok is wrapping
     // if the value is an Err value, this method calls the code in the closure
-    let config = Config::build(&args).unwrap_or_else(|err| {
+    // the env::args function returns an iterator: we can use it instead &args to take ownership of an iterator as its argument instead of borrowing a slice
+    let config = Config::build(env::args()).unwrap_or_else(|err| {
         // prints errors to terminal, not to file, even if we run $ cargo run -- to poem.txt > output.txt 
         eprintln!("Problem parsing arguments: {err}");
         process::exit(1);
