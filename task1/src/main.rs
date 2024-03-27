@@ -32,7 +32,7 @@ fn main() {
     println!("get all posts:");
     println!("{}", blog.get_all());
     println!("get post 2:");
-    blog.get_post_by_id(2);
+    println!("{}", blog.get_post_by_id(2));
     println!("get post 4:");
-    blog.get_post_by_id(4);
+    println!("{}", blog.get_post_by_id(4));
 }
