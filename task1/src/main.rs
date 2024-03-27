@@ -30,7 +30,7 @@ fn main() {
     blog.add_post(p2);
     blog.add_post(p3);
     println!("get all posts:");
-    blog.get_all();
+    println!("{}", blog.get_all());
     println!("get post 2:");
     blog.get_post_by_id(2);
     println!("get post 4:");
