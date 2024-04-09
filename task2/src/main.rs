@@ -1,10 +1,7 @@
 use std::sync::mpsc;
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 use std::sync::RwLock;
-// use task2::Client;
-// use task2::Bank;
-// use task2::Transaction;
 
 pub struct Client {
     id: u64,
@@ -55,37 +52,45 @@ pub struct Transaction {
     amount: usize
 }
 
+impl Clone for Transaction {
+    fn clone(&self) -> Self {
+        let (tx, rx) = mpsc::channel::<Transaction>();
+        Self {
+            from_bank_id: self.from_bank_id,
+            to_bank_id: self.to_bank_id,
+            from_client_id: self.from_client_id,
+            to_client_id: self.to_client_id,
+            amount: self.amount
+        }
+    }
+}
+
 impl Bank {  
     fn start(&self) {
         while let Ok(transaction) = self.rx.recv() {
-            // Получаем доступ к балансу клиента отправителя
-            println!("{}", transaction.from_client_id);
-            // let from_client = clients.iter().find(|&client| client.id == transaction.from_client_id).unwrap();
-            // let from_balance = from_client.balance.clone();
-            
-            // Получаем доступ к балансу клиента получателя
-            let to_client = self.clients.iter().find(|&client| client.id == transaction.to_client_id).unwrap();
-            // let to_balance = dbg!(to_client.balance.read().unwrap().clone());
-            
-            // Блокируем оба баланса для изменений
-            // let mut from = from_balance.write().unwrap();
-            let mut to = to_client.balance.write().unwrap();
-
-            *to += transaction.amount;
             println!("Сумма: {}, от банка {} к банку {}.",
                 transaction.amount, transaction.from_bank_id, transaction.to_bank_id);
+        
+            if transaction.from_bank_id == self.id {
+                let from_client = self.clients.iter().find(|&client| client.id == transaction.from_client_id).unwrap();
+                println!("Счёт отправителя до транзанкции: {}", from_client.balance.read().unwrap());
+                {
+                    let mut from = from_client.balance.write().unwrap();
+                    *from -= transaction.amount;
+                }
+                println!("Счёт отправителя после транзанкции: {}", from_client.balance.read().unwrap());
+            };
+
+            if transaction.to_bank_id == self.id {
+                let to_client = self.clients.iter().find(|&client| client.id == transaction.to_client_id).unwrap();
+                println!("Счёт получателя до транзанкции: {}", to_client.balance.read().unwrap());
+                {
+                    let mut to = to_client.balance.write().unwrap();
+                    *to += transaction.amount;
+                }
+                println!("Счёт получателя после транзанкции: {}", to_client.balance.read().unwrap());
+            };
             
-            // Проверяем достаточность средств на счете отправителя
-            // if *from >= transaction.amount {
-            //     // Выполняем перевод между счетами
-            //     *from -= transaction.amount;
-            //     *to += transaction.amount;
-                
-            //     dbg!("Сумма: {}, от банка {} к банку {}.",
-            //                 transaction.amount, transaction.from_bank_id, transaction.to_bank_id);
-            // } else {
-            //     println!("Не хватает средств на счете отправителя");
-            // } 
         
         }
     }
@@ -93,11 +98,19 @@ impl Bank {
     fn send_transaction(&self, tx: Sender<Transaction>, transaction: Transaction) {
         let from_client = self.clients.iter().find(|&client| client.id == transaction.from_client_id).unwrap();
         let from = from_client.balance.read().unwrap();
-        println!("отправитель {}", transaction.from_client_id);
+        let self_tx = self.tx.clone();
+        let transaction1 = transaction.clone();
         if *from >= transaction.amount {
+            if transaction.from_bank_id == transaction.to_bank_id {
+                println!("Внутрибанковая транзанкция");
+            } else {
+                println!("Межбанковская транзанкция");
+                thread::spawn(move || {
+                    self_tx.send(transaction).unwrap();
+                });
+            }
             thread::spawn(move || {
-                println!("шлём {} рублей", transaction.amount);
-                tx.send(transaction).unwrap();
+                tx.send(transaction1).unwrap();
             });
         } else {
             println!("Не хватает средств на счете отправителя");
@@ -156,39 +169,32 @@ fn main() {
         to_bank_id: 2,
         from_client_id: 1,
         to_client_id: 3,
-        amount: 150,
+        amount: 50,
     };
     let transaction4 = Transaction {
         from_bank_id: 1,
         to_bank_id: 1,
         from_client_id: 1,
         to_client_id: 2,
-        amount: 50,
+        amount: 40,
     };
     let transaction5 = Transaction {
         from_bank_id: 1,
         to_bank_id: 1,
         from_client_id: 1,
         to_client_id: 2,
-        amount: 50,
+        amount: 10,
     };
     let transaction6 = Transaction {
         from_bank_id: 1,
         to_bank_id: 1,
         from_client_id: 1,
         to_client_id: 2,
-        amount: 50,
+        amount: 60,
     };
 
     let b1 = bank1.clone();
     let b2 = bank2.clone();
-
-    b1.send_transaction(b1.tx.clone(), transaction1);
-    b1.send_transaction(b1.tx.clone(), transaction2);
-    b1.send_transaction(b2.tx.clone(), transaction3);
-    // b1.send_transaction(b1.tx.clone(), transaction4);
-    // b1.send_transaction(b1.tx.clone(), transaction5);
-    // b1.send_transaction(b1.tx.clone(), transaction6);
 
     thread::spawn(move || {
         bank1.start();
@@ -197,24 +203,10 @@ fn main() {
         bank2.start();
     });
 
-    // let (tx1, rx1) = mpsc::channel::<Transaction>();
-    // let (tx2, rx2) = mpsc::channel::<Transaction>();
-
-    // thread::spawn(move || {
-    //     while let Ok(transaction) = rx1.recv() {
-    //         // Получаем доступ к балансу клиента отправителя
-    //         println!("{}", transaction.amount);
-    //     }
-    // });
-
-    // thread::spawn(move || {
-    //     while let Ok(transaction) = rx2.recv() {
-    //         // Получаем доступ к балансу клиента отправителя
-    //         println!("{}", transaction.amount);
-    //     }
-    // });
-
-    // tx1.send(transaction1).unwrap();
-    // tx1.send(transaction2).unwrap();
-    // tx2.send(transaction3).unwrap();
+    b1.send_transaction(b1.tx.clone(), transaction1);
+    b1.send_transaction(b1.tx.clone(), transaction2);
+    b1.send_transaction(b2.tx.clone(), transaction3);
+    b1.send_transaction(b1.tx.clone(), transaction4);
+    b1.send_transaction(b1.tx.clone(), transaction5);
+    b1.send_transaction(b1.tx.clone(), transaction6);
 }
