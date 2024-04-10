@@ -66,7 +66,7 @@ impl Clone for Transaction {
 }
 
 impl Bank {  
-    fn start(&self) {
+    fn start(&self, tx: Sender<Bank>) {
         while let Ok(transaction) = self.rx.recv() {
             println!("Сумма: {}, от банка {} к банку {}.",
                 transaction.amount, transaction.from_bank_id, transaction.to_bank_id);
@@ -90,32 +90,33 @@ impl Bank {
                 }
                 println!("Счёт получателя после транзанкции: {}", to_client.balance.read().unwrap());
             };
-            
-        
+
+            tx.send(self.clone()).unwrap();
         }
     }
-    
-    fn send_transaction(&self, tx: Sender<Transaction>, transaction: Transaction) {
-        let from_client = self.clients.iter().find(|&client| client.id == transaction.from_client_id).unwrap();
-        let from = from_client.balance.read().unwrap();
-        let self_tx = self.tx.clone();
-        let transaction1 = transaction.clone();
-        if *from >= transaction.amount {
-            if transaction.from_bank_id == transaction.to_bank_id {
-                println!("Внутрибанковая транзанкция");
-            } else {
-                println!("Межбанковская транзанкция");
-                thread::spawn(move || {
-                    self_tx.send(transaction).unwrap();
-                });
-            }
-            thread::spawn(move || {
-                tx.send(transaction1).unwrap();
-            });
+}
+
+fn send_transaction(bank: Bank, tx_bank: Sender<Bank>, tx: Sender<Transaction>, transaction: Transaction) {
+    let from_client = bank.clients.iter().find(|&client| client.id == transaction.from_client_id).unwrap();
+    let from = from_client.balance.read().unwrap();
+    let self_tx = bank.tx.clone();
+    let transaction1 = transaction.clone();
+    if *from >= transaction.amount {
+        if transaction.from_bank_id == transaction.to_bank_id {
+            println!("Внутрибанковая транзанкция");
         } else {
-            println!("Не хватает средств на счете отправителя");
-        } 
-    }
+            println!("Межбанковская транзанкция");
+            thread::spawn(move || {
+                self_tx.send(transaction).unwrap();
+            });
+        }
+        thread::spawn(move || {
+            tx.send(transaction1).unwrap();
+        });
+    } else {
+        println!("Не хватает средств на счете отправителя");
+        tx_bank.send(bank.clone()).unwrap();
+    } 
 }
 
 fn main() {
@@ -169,13 +170,13 @@ fn main() {
         to_bank_id: 2,
         from_client_id: 1,
         to_client_id: 3,
-        amount: 50,
+        amount: 150,
     };
     let transaction4 = Transaction {
-        from_bank_id: 1,
+        from_bank_id: 2,
         to_bank_id: 1,
-        from_client_id: 1,
-        to_client_id: 2,
+        from_client_id: 3,
+        to_client_id: 1,
         amount: 40,
     };
     let transaction5 = Transaction {
@@ -193,20 +194,41 @@ fn main() {
         amount: 60,
     };
 
-    let b1 = bank1.clone();
-    let b2 = bank2.clone();
+    let tx_bank1_copy = bank1.tx.clone();
+    let tx_bank2_copy = bank2.tx.clone();
+
+    let (tx1, rx1) = mpsc::channel::<Bank>();
+    let (tx2, rx2) = mpsc::channel::<Bank>();
+
+    let tx1_clone = tx1.clone();
+    let tx2_clone = tx2.clone();
+
+    tx1.send(bank1.clone()).unwrap();
+    tx2.send(bank2.clone()).unwrap();
 
     thread::spawn(move || {
-        bank1.start();
+        bank1.start(tx1_clone);
     });
     thread::spawn(move || {
-        bank2.start();
+        bank2.start(tx2_clone);
     });
 
-    b1.send_transaction(b1.tx.clone(), transaction1);
-    b1.send_transaction(b1.tx.clone(), transaction2);
-    b1.send_transaction(b2.tx.clone(), transaction3);
-    b1.send_transaction(b1.tx.clone(), transaction4);
-    b1.send_transaction(b1.tx.clone(), transaction5);
-    b1.send_transaction(b1.tx.clone(), transaction6);
+    let mut bank = rx1.recv().unwrap();
+    let mut bank2 = rx2.recv().unwrap();
+    send_transaction(bank.clone(), tx1.clone(), tx_bank1_copy.clone(), transaction1);
+    bank = rx1.recv().unwrap();
+    send_transaction(bank.clone(), tx1.clone(), tx_bank1_copy.clone(), transaction2);
+    bank = rx1.recv().unwrap();
+    send_transaction(bank.clone(), tx1.clone(), tx_bank2_copy.clone(), transaction3);
+    bank2 = rx2.recv().unwrap();
+    bank = rx1.recv().unwrap();
+    send_transaction(bank2.clone(), tx2.clone(), tx_bank1_copy.clone(), transaction4);
+    bank = rx1.recv().unwrap();
+    send_transaction(bank.clone(), tx1.clone(), tx_bank1_copy.clone(), transaction5);
+    bank = rx1.recv().unwrap();
+    send_transaction(bank.clone(), tx1.clone(), tx_bank1_copy.clone(), transaction6);
+    println!("{}", bank.clients[0].balance.read().unwrap());
+    println!("{}", bank.clients[1].balance.read().unwrap());
+    bank2 = rx2.recv().unwrap();
+    println!("{}", bank2.clients[0].balance.read().unwrap());
 }
